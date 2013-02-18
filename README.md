@@ -7,6 +7,8 @@ Check [Unhosted](https://unhosted.org) for more info about
 
 ## Current status
 
+**TODO**: Move `Network.RemoteStorage.Types` to a different package.
+
 The following enumeration matches the section numbering used in
 IETF's [`draft-dejong-remotestorage-00`](
 https://tools.ietf.org/id/draft-dejong-remotestorage-00.txt) draft, and it
@@ -18,13 +20,14 @@ details the currentlty supported and unsupported features.
     - Item related types:
         - `Network.RemoteStorage.Types.ItemName`
         - `Network.RemoteStorage.Types.ItemVersion`
-        - `Codec.MIME.MIMEType`
     - Node (i.e., items in a tree) related types:
         - `Network.RemoteStorage.Types.Node`
         - `Network.RemoteStorage.Types.NodePath`
-    - **TODO**:
-        - Move `Network.RemoteStorage.Types` to a different package.
-4. Requests: **TODO**
+4. Requests:
+    - Node representation:
+        - `Network.RemoteStorage.Types.NodeRep`
+    - Node requests:
+        - `Network.RemoteStorage.Types.NodeRequest`
 5. Response codes: **TODO**
 6. Versioning: **TODO**
 7. CORS headers: **TODO**
