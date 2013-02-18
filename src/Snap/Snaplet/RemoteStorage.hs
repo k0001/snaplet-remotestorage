@@ -1,1 +1,0 @@
-module Snap.Snaplet.RemoteStorage where

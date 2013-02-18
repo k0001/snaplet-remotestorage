@@ -14,7 +14,16 @@ details the currentlty supported and unsupported features.
 
 1. Introduction: N/A
 2. Terminology: N/A
-3. Storage model: N/A
+3. Storage model:
+    - Item related types:
+        - `Network.RemoteStorage.Types.ItemName`
+        - `Network.RemoteStorage.Types.ItemVersion`
+        - `Codec.MIME.MIMEType`
+    - Node (i.e., items in a tree) related types:
+        - `Network.RemoteStorage.Types.Node`
+        - `Network.RemoteStorage.Types.NodePath`
+    - **TODO**:
+        - Move `Network.RemoteStorage.Types` to a different package.
 4. Requests: **TODO**
 5. Response codes: **TODO**
 6. Versioning: **TODO**
