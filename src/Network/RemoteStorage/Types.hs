@@ -6,13 +6,18 @@
 
 
 module Network.RemoteStorage.Types
-  ( ItemName
+  ( apiVersion
+
+  -- * Storage model
+  -- ** Individual items
+  , ItemName
   , unItemName
   , mkItemName
   , validItemNameChar
   , ItemVersion
   , itemVersionSeconds
   , itemVersionMilliseconds
+  -- ** Items in a tree
   , Folder
   , Document
   , Node(..)
@@ -21,8 +26,9 @@ module Network.RemoteStorage.Types
   , lookupNFolder
   , lookupNDocument
   , NodePath
-  , Request(..)
-  , NodeRequest
+  -- * Requests
+  , RequestOp(..)
+  , Request
   ) where
 
 import qualified Data.Text as T
@@ -32,6 +38,11 @@ import           Data.Time.Clock.POSIX (POSIXTime)
 import           Data.Hashable (Hashable)
 import qualified Data.HashMap as M
 
+
+--------------------------------------------------------------------------------
+
+apiVersion :: T.Text
+apiVersion = "draft-dejong-remotestorage-00"
 
 --------------------------------------------------------------------------------
 
@@ -111,12 +122,14 @@ lookupNDocument   _               _      = Nothing
 
 --------------------------------------------------------------------------------
 
-data Request
+data RequestOp
   = GetDocument
   | PutDocument
   | DelDocument
   | GetFolder
   deriving (Eq, Show)
 
-type NodeRequest = (Request, NodePath, Maybe ItemVersion)
+type Request = (RequestOp, NodePath, Maybe ItemVersion)
+
+
 
