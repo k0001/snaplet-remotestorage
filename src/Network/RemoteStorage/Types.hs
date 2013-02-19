@@ -5,6 +5,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 
+-- | This module provides types and functions to encode the remoteStorage
+-- support specified by IETF's @draft-dejong-remotestorage-00.txt@ draft.
+
 module Network.RemoteStorage.Types
   ( apiVersion
   -- * Store
@@ -110,7 +113,6 @@ data Node a b x where
   NFolder   :: ItemVersion -> a -> ItemMap (Node a b x) -> Node a b Folder
   NDocument :: ItemVersion -> b                         -> Node a b Document
 
-
 -- | Construct an 'Node Folder' with an optional default 'ItemVersion'. If no
 -- 'ItemVersion' is given, then it is calculated from the given children.
 mkNFolder :: Maybe ItemVersion -> a -> ItemMap (Node a b x) -> Node a b Folder
@@ -163,7 +165,6 @@ lookupDocument ks   (NFolder _ _ m) = case ks of
     (k:ks') -> M.lookup (Folder,k)   m >>= lookupDocument ks'
 lookupDocument _ _ = Nothing
 
-
 --------------------------------------------------------------------------------
 
 data RequestOp
@@ -192,7 +193,6 @@ parseModuleName "public"          = Nothing
 parseModuleName t
     | T.all validModuleNameChar t = Just $ ModuleName t
     | otherwise                   = Nothing
-
 
 -- | Whether the given 'Char' is one of: @a-z@, @0-9@
 validModuleNameChar :: Char -> Bool

@@ -17,22 +17,16 @@ details the currentlty supported and unsupported features.
 1. Introduction: N/A
 2. Terminology: N/A
 3. Storage model:
-    - Item related types:
-        - `Network.RemoteStorage.Types.ItemName`
-        - `Network.RemoteStorage.Types.ItemVersion`
-    - Node (i.e., items in a tree) related types:
-        - `Network.RemoteStorage.Types.Node`
-        - `Network.RemoteStorage.Types.NodePath`
+    - Done (?) at `Network.RemoteStorage.Types`.
 4. Requests:
-    - Node representation:
-        - `Network.RemoteStorage.Types.NodeRep`
-    - Node requests:
-        - `Network.RemoteStorage.Types.NodeRequest`
+    - Done (?) at `Network.RemoteStorage.Types`.
 5. Response codes: **TODO**
 6. Versioning: **TODO**
+    - Done (?) at `Network.RemoteStorage.Types`.
 7. CORS headers: **TODO**
 8. Session description: **TODO**
 9. Bearer tokens and access control: **TODO**
+    - Some progress at `Network.RemoteStorage.Types`.
 10. Application-first bearer token issuance: **TODO**
 11. Storage-first bearer token issuance: **TODO**
 12. Security Considerations: **TODO**
