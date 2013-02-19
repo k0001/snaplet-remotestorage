@@ -135,11 +135,12 @@ nodeItemType (NDocument _ _) = Document
 
 type NodePath = [ItemName]
 
-parsePath :: T.Text -> Maybe (Bool, NodePath)
+parsePath :: T.Text -> Maybe (ItemType, NodePath)
 parsePath "" = Nothing
-parsePath t  = return . (,) isFolder =<< path
+parsePath t  = return . (,) pathType =<< path
   where path = traverse id . fmap mkItemName $ T.split (=='/') t
         isFolder = T.last t == '/'
+        pathType = if isFolder then Folder else Document
 
 isPublicPath :: NodePath -> Bool
 isPublicPath (ItemName "public":_) = True
