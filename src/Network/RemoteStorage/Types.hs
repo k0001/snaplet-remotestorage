@@ -190,7 +190,7 @@ mkModuleName t | T.all validModuleNameChar t = Just $ ModuleName t
                | otherwise                   = Nothing
 
 
--- | Whether the given 'Char' is one of: @a-z@, @A-Z@, @0-9@, @%@, @-@, @_@
+-- | Whether the given 'Char' is one of: @a-z@, @0-9@
 validModuleNameChar :: Char -> Bool
 validModuleNameChar c = C.isAsciiLower c || C.isDigit c
 
