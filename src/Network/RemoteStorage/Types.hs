@@ -7,8 +7,7 @@
 
 module Network.RemoteStorage.Types
   ( apiVersion
-
-  -- * Storage model
+  -- * Store
   -- ** Individual items
   , ItemName
   , unItemName
@@ -17,7 +16,7 @@ module Network.RemoteStorage.Types
   , ItemVersion
   , itemVersionSeconds
   , itemVersionMilliseconds
-  -- ** Items in a tree
+  -- ** Storage tree
   , Folder
   , Document
   , Node(..)
@@ -29,6 +28,11 @@ module Network.RemoteStorage.Types
   -- * Requests
   , RequestOp(..)
   , Request
+  -- * Modules
+  , ModuleName
+  , unModuleName
+  , mkModuleName
+  , validModuleNameChar
   ) where
 
 import qualified Data.Text as T
@@ -37,6 +41,7 @@ import           Data.Monoid ((<>))
 import           Data.Time.Clock.POSIX (POSIXTime)
 import           Data.Hashable (Hashable)
 import qualified Data.HashMap as M
+import qualified Data.Char as C
 
 
 --------------------------------------------------------------------------------
@@ -57,13 +62,13 @@ newtype ItemName = ItemName { unItemName :: T.Text }
 -- otherwise 'Nothing'.
 mkItemName :: T.Text -> Maybe ItemName
 mkItemName t | T.all validItemNameChar t = Just $ ItemName t
-           | otherwise                 = Nothing
+             | otherwise                 = Nothing
 
 -- | Whether the given 'Char' is one of: @a-z@, @A-Z@, @0-9@, @%@, @-@, @_@
 validItemNameChar :: Char -> Bool
-validItemNameChar c =
-    (c >= 'a'  &&  c <= 'z') || (c >= 'A'  &&  c <= 'Z') ||
-    (c >= '0'  &&  c <= '9') ||  c == '%'  ||  c == '-'  ||  c == '_'
+validItemNameChar c = C.isAsciiUpper c || C.isAsciiLower c || C.isDigit c
+                   || c == '%'         || c == '-'         || c == '_'
+
 
 --------------------------------------------------------------------------------
 
@@ -131,5 +136,24 @@ data RequestOp
 
 type Request = (RequestOp, NodePath, Maybe ItemVersion)
 
+--------------------------------------------------------------------------------
 
+-- | A 'ModuleName' is wrapper around 'Text' that can only contain only valid
+-- module names.
+--
+-- Use the smart constructor 'mkModuleName' to build an 'ModuleName'.
+newtype ModuleName = ModuleName { unModuleName :: T.Text }
+  deriving (Eq, Show)
+
+-- | 'Just' a 'ModuleName' if the given 'T.Text' would be a valid 'ModuleName',
+-- otherwise 'Nothing'.
+mkModuleName :: T.Text -> Maybe ModuleName
+mkModuleName "public" = Nothing
+mkModuleName t | T.all validModuleNameChar t = Just $ ModuleName t
+               | otherwise                   = Nothing
+
+
+-- | Whether the given 'Char' is one of: @a-z@, @A-Z@, @0-9@, @%@, @-@, @_@
+validModuleNameChar :: Char -> Bool
+validModuleNameChar c = C.isAsciiLower c || C.isDigit c
 
