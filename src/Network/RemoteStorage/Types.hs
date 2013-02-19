@@ -11,7 +11,7 @@ module Network.RemoteStorage.Types
   -- ** Individual items
   , ItemName
   , unItemName
-  , mkItemName
+  , parseItemName
   , validItemNameChar
   , ItemVersion
   , itemVersionMilliseconds
@@ -35,11 +35,14 @@ module Network.RemoteStorage.Types
   -- * Modules
   , ModuleName
   , unModuleName
-  , mkModuleName
+  , parseModuleName
   , validModuleNameChar
   -- * Access Levels
   , AccessLevel(..)
   , parseAccessLevel
+  -- * Access Scope
+  , AccessScope
+  , parseAccessScope
   ) where
 
 import qualified Data.Text as T
@@ -62,15 +65,15 @@ apiVersion = "draft-dejong-remotestorage-00"
 -- | An 'ItemName' is wrapper around 'Text' that can only contain only valid
 -- item names.
 --
--- Use the smart constructor 'mkItemName' to build an 'ItemName'.
+-- Use the smart constructor 'parseItemName' to build an 'ItemName'.
 newtype ItemName = ItemName { unItemName :: T.Text }
   deriving (Eq, Show, H.Hashable, Ord)
 
 -- | 'Just' an 'ItemName' if the given 'T.Text' would be a valid 'ItemName',
 -- otherwise 'Nothing'.
-mkItemName :: T.Text -> Maybe ItemName
-mkItemName ""                   = Nothing
-mkItemName t
+parseItemName :: T.Text -> Maybe ItemName
+parseItemName ""                = Nothing
+parseItemName t
     | T.all validItemNameChar t = Just $ ItemName t
     | otherwise                 = Nothing
 
@@ -138,7 +141,7 @@ type NodePath = [ItemName]
 parsePath :: T.Text -> Maybe (ItemType, NodePath)
 parsePath "" = Nothing
 parsePath t  = return . (,) pathType =<< path
-  where path = traverse id . fmap mkItemName $ T.split (=='/') t
+  where path = traverse id . fmap parseItemName $ T.split (=='/') t
         isFolder = T.last t == '/'
         pathType = if isFolder then Folder else Document
 
@@ -154,7 +157,7 @@ lookupFolder _ _ = Nothing
 
 lookupDocument :: NodePath -> Node a b x -> Maybe (Node a b Document)
 lookupDocument [] x@(NDocument _ _) = Just x
-lookupDocument ks (NFolder _ _ m) = case ks of
+lookupDocument ks   (NFolder _ _ m) = case ks of
     []      -> Nothing
     [k]     -> M.lookup (Document,k) m >>= lookupDocument []
     (k:ks') -> M.lookup (Folder,k)   m >>= lookupDocument ks'
@@ -177,17 +180,18 @@ type Request = (RequestOp, NodePath, Maybe ItemVersion)
 -- | A 'ModuleName' is wrapper around 'Text' that can only contain only valid
 -- module names.
 --
--- Use the smart constructor 'mkModuleName' to build an 'ModuleName'.
+-- Use the smart constructor 'parseModuleName' to build an 'ModuleName'.
 newtype ModuleName = ModuleName { unModuleName :: T.Text }
   deriving (Eq, Show)
 
 -- | 'Just' a 'ModuleName' if the given 'T.Text' would be a valid 'ModuleName',
 -- otherwise 'Nothing'.
-mkModuleName :: T.Text -> Maybe ModuleName
-mkModuleName ""       = Nothing
-mkModuleName "public" = Nothing
-mkModuleName t | T.all validModuleNameChar t = Just $ ModuleName t
-               | otherwise                   = Nothing
+parseModuleName :: T.Text -> Maybe ModuleName
+parseModuleName ""                = Nothing
+parseModuleName "public"          = Nothing
+parseModuleName t
+    | T.all validModuleNameChar t = Just $ ModuleName t
+    | otherwise                   = Nothing
 
 
 -- | Whether the given 'Char' is one of: @a-z@, @0-9@
@@ -203,3 +207,14 @@ parseAccessLevel :: T.Text -> Maybe AccessLevel
 parseAccessLevel ":r"  = Just Read
 parseAccessLevel ":rw" = Just ReadWrite
 parseAccessLevel _     = Nothing
+
+--------------------------------------------------------------------------------
+
+type AccessScope = (ModuleName, AccessLevel)
+
+parseAccessScope :: T.Text -> Maybe AccessScope
+parseAccessScope t =
+    let (a,b) = T.break (==':') t in
+    case (parseModuleName a, parseAccessLevel b) of
+      (Just a', Just b') -> Just (a',b')
+      _                  -> Nothing
