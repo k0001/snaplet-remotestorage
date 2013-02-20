@@ -3,10 +3,15 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE ConstraintKinds #-}
 
 
 -- | This module provides types and functions to encode the remoteStorage
 -- support specified by IETF's @draft-dejong-remotestorage-00.txt@ draft.
+
 
 module Network.RemoteStorage.Types
   ( apiVersion
@@ -18,20 +23,14 @@ module Network.RemoteStorage.Types
   , validItemNameChar
   , ItemVersion
   , itemVersionMilliseconds
-  , ItemType(..)
+  , Item(..)
   -- ** Storage tree
-  , ItemMap
-  , Folder
-  , Document
   , Node(..)
   , mkNFolder
   , nodeVersion
-  , nodeItemType
-  , NodePath
   , parsePath
   , isPublicPath
-  , lookupFolder
-  , lookupDocument
+  , lookupPath
   -- * Requests
   , RequestOp(..)
   , Request
@@ -94,32 +93,30 @@ itemVersionMilliseconds = truncate . (*1000)
 
 --------------------------------------------------------------------------------
 
-data ItemType = Folder | Document
+data Item = Folder | Document
   deriving (Show, Eq, Ord, Enum)
 
-instance H.Hashable ItemType where
+instance H.Hashable Item where
   hashWithSalt = H.hashUsing fromEnum
-
--- Having 'ItemType' in the Key might seem redundant, yet we need it so that
--- we can have folders and documents with the same name.
-type ItemMap a = M.Map (ItemType, ItemName) a
 
 --------------------------------------------------------------------------------
 
-data Folder
-data Document
+type NodeMap a b t = M.Map (Item, ItemName) (Node a b t)
 
-data Node a b x where
-  NFolder   :: ItemVersion -> a -> ItemMap (Node a b x) -> Node a b Folder
-  NDocument :: ItemVersion -> b                         -> Node a b Document
+data Node a b (x :: Item) where
+  NFolder   :: ItemVersion -> a -> NodeMap a b x -> Node a b Folder
+  NDocument :: ItemVersion -> b                  -> Node a b Document
+
+type family ItemType t :: Item
+type instance ItemType (Node a b Folder)   = Folder
+type instance ItemType (Node a b Document) = Document
 
 -- | Construct an 'Node Folder' with an optional default 'ItemVersion'. If no
 -- 'ItemVersion' is given, then it is calculated from the given children.
-mkNFolder :: Maybe ItemVersion -> a -> ItemMap (Node a b x) -> Node a b Folder
+mkNFolder :: Maybe ItemVersion -> a -> NodeMap a b x -> Node a b Folder
 mkNFolder (Just ver) a xs = NFolder ver a xs
 mkNFolder Nothing    a xs = NFolder ver a xs
   where ver = maximum . fmap nodeVersion $ M.elems xs
-
 
 instance J.ToJSON (Node a b Folder) where
   toJSON (NFolder _ _ xs) = J.object $ M.foldWithKey pair [] xs
@@ -132,38 +129,37 @@ nodeVersion :: Node a b x -> ItemVersion
 nodeVersion (NFolder v _ _) = v
 nodeVersion (NDocument v _) = v
 
-nodeItemType :: Node a b x -> ItemType
-nodeItemType (NFolder _ _ _) = Folder
-nodeItemType (NDocument _ _) = Document
-
 --------------------------------------------------------------------------------
 
-type NodePath = [ItemName]
 
-parsePath :: T.Text -> Maybe (ItemType, NodePath)
+data Path (t :: Item) where
+  FolderPath   :: [ItemName] -> Path Folder
+  DocumentPath :: [ItemName] -> Path Document
+
+
+parsePath :: T.Text -> Maybe (Item, [ItemName])
 parsePath "" = Nothing
 parsePath t  = return . (,) pathType =<< path
   where path = traverse id . fmap parseItemName $ T.split (=='/') t
         isFolder = T.last t == '/'
         pathType = if isFolder then Folder else Document
 
-isPublicPath :: NodePath -> Bool
-isPublicPath (ItemName "public":_) = True
-isPublicPath _                     = False
+isPublicPath :: Path t -> Bool
+isPublicPath (FolderPath   (ItemName "public":_)) = True
+isPublicPath (DocumentPath (ItemName "public":_)) = True
+isPublicPath _                                    = False
 
-lookupFolder :: NodePath -> Node a b x -> Maybe (Node a b Folder)
-lookupFolder ks x@(NFolder _ _ m) = case ks of
-    []      -> Just x
-    (k:ks') -> M.lookup (Folder,k) m >>= lookupFolder ks'
-lookupFolder _ _ = Nothing
 
-lookupDocument :: NodePath -> Node a b x -> Maybe (Node a b Document)
-lookupDocument [] x@(NDocument _ _) = Just x
-lookupDocument ks   (NFolder _ _ m) = case ks of
+lookupPath :: Path t -> Node a b t' -> Maybe (Node a b t)
+lookupPath (DocumentPath _) x@(NDocument _ _) = Just x
+lookupPath (DocumentPath ks)  (NFolder _ _ m) = case ks of
     []      -> Nothing
-    [k]     -> M.lookup (Document,k) m >>= lookupDocument []
-    (k:ks') -> M.lookup (Folder,k)   m >>= lookupDocument ks'
-lookupDocument _ _ = Nothing
+    [k]     -> M.lookup (Document,k) m >>= lookupPath (DocumentPath [])
+    (k:ks') -> M.lookup (Folder,k)   m >>= lookupPath (DocumentPath ks')
+lookupPath (FolderPath ks)   x@(NFolder _ _ m) = case ks of
+    []      -> Just x
+    (k:ks') -> M.lookup (Folder,k) m >>= lookupPath (FolderPath ks')
+lookupPath _ _ = Nothing
 
 --------------------------------------------------------------------------------
 
@@ -174,7 +170,7 @@ data RequestOp
   | GetFolder
   deriving (Eq, Show, Enum)
 
-type Request = (RequestOp, NodePath, Maybe ItemVersion)
+type Request (t :: Item) = (RequestOp, Path t, Maybe ItemVersion)
 
 --------------------------------------------------------------------------------
 
