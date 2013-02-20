@@ -10,6 +10,8 @@
 
 module Network.RemoteStorage.Types
   ( apiVersion
+  , apiAuthMethod
+  , apiFingerResponse
   -- * Store
   -- ** Individual items
   , ItemName
@@ -56,6 +58,20 @@ import           Data.Traversable      (traverse)
 
 apiVersion :: T.Text
 apiVersion = "draft-dejong-remotestorage-00"
+
+apiAuthMethod :: T.Text
+apiAuthMethod = "http://tools.ietf.org/html/rfc6749#section-4.2"
+
+apiFingerResponse :: T.Text -> T.Text -> J.Value
+apiFingerResponse storageRoot authEndpoint = J.object
+    [ "rel"        J..= ("remotestorage" :: T.Text)
+    , "href"       J..= storageRoot
+    , "type"       J..= apiVersion
+    , "properties" J..=
+        [ "auth-method"   J..= apiAuthMethod
+        , "auth-endpoint" J..= authEndpoint
+        ]
+    ]
 
 --------------------------------------------------------------------------------
 
@@ -200,8 +216,8 @@ data AccessLevel = Read | ReadWrite
   deriving (Eq, Show, Enum)
 
 parseAccessLevel :: T.Text -> Maybe AccessLevel
-parseAccessLevel ":r"  = Just Read
-parseAccessLevel ":rw" = Just ReadWrite
+parseAccessLevel "r"  = Just Read
+parseAccessLevel "rw" = Just ReadWrite
 parseAccessLevel _     = Nothing
 
 --------------------------------------------------------------------------------
@@ -211,6 +227,7 @@ type AccessScope = (ModuleName, AccessLevel)
 parseAccessScope :: T.Text -> Maybe AccessScope
 parseAccessScope t =
     let (a,b) = T.break (==':') t in
-    case (parseModuleName a, parseAccessLevel b) of
+    case (parseModuleName a, parseAccessLevel $ T.drop 1 b) of
       (Just a', Just b') -> Just (a',b')
       _                  -> Nothing
+
