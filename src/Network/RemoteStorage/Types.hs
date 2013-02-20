@@ -1,17 +1,12 @@
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
-
--- | This module provides types and functions to encode the remoteStorage
+-- | This module provides types and functions to safely encode the remoteStorage
 -- support specified by IETF's @draft-dejong-remotestorage-00.txt@ draft.
-
 
 module Network.RemoteStorage.Types
   ( apiVersion
@@ -23,14 +18,14 @@ module Network.RemoteStorage.Types
   , validItemNameChar
   , ItemVersion
   , itemVersionMilliseconds
-  , Item(..)
   -- ** Storage tree
+  , Item(..)
   , Node(..)
   , mkNFolder
   , nodeVersion
   , parsePath
-  , isPublicPath
   , lookupPath
+  , isPublicPath
   -- * Requests
   , RequestOp(..)
   , Request
@@ -47,14 +42,14 @@ module Network.RemoteStorage.Types
   , parseAccessScope
   ) where
 
-import qualified Data.Text as T
-import qualified Data.Aeson as J
-import           Data.Monoid ((<>))
+import qualified Data.Text             as T
+import qualified Data.Aeson            as J
+import           Data.Monoid           ((<>))
 import           Data.Time.Clock.POSIX (POSIXTime)
-import qualified Data.Hashable as H
-import qualified Data.HashMap as M
-import qualified Data.Char as C
-import           Data.Traversable (traverse)
+import qualified Data.Hashable         as H
+import qualified Data.HashMap          as M
+import qualified Data.Char             as C
+import           Data.Traversable      (traverse)
 
 
 --------------------------------------------------------------------------------
@@ -64,14 +59,13 @@ apiVersion = "draft-dejong-remotestorage-00"
 
 --------------------------------------------------------------------------------
 
--- | An 'ItemName' is wrapper around 'Text' that can only contain only valid
--- item names.
+-- | An 'ItemName' is 'Text' that can only contain only valid item names.
 --
 -- Use the smart constructor 'parseItemName' to build an 'ItemName'.
 newtype ItemName = ItemName { unItemName :: T.Text }
   deriving (Eq, Show, H.Hashable, Ord)
 
--- | 'Just' an 'ItemName' if the given 'T.Text' would be a valid 'ItemName',
+-- | 'Just' an 'ItemName' if the given 'T.Text' is a valid item name
 -- otherwise 'Nothing'.
 parseItemName :: T.Text -> Maybe ItemName
 parseItemName ""                = Nothing
@@ -99,66 +93,73 @@ data Item = Folder | Document
 instance H.Hashable Item where
   hashWithSalt = H.hashUsing fromEnum
 
+type NamedItem = (Item, ItemName)
+
 --------------------------------------------------------------------------------
 
-type NodeMap a b t = M.Map (Item, ItemName) (Node a b t)
+-- | A 'Node' stores versioned values of type 'b' for a 'Document' or, together
+-- with it children nodes, values of type 'a' for a 'Folder'.
+data Node a b t where
+  NFolder   :: ItemVersion -> a -> NodeMap a b -> Node a b Folder
+  NDocument :: ItemVersion -> b                -> Node a b Document
+deriving instance (Show a, Show b) => Show (Node a b t)
 
-data Node a b (x :: Item) where
-  NFolder   :: ItemVersion -> a -> NodeMap a b x -> Node a b Folder
-  NDocument :: ItemVersion -> b                  -> Node a b Document
+-- | 'Node' existential: ∀a,b. ∃t. Node a b t => ANode a b
+data ANode a b where
+  ANode :: Node a b t -> ANode a b
+deriving instance (Show a, Show b) => Show (ANode a b)
 
-type family ItemType t :: Item
-type instance ItemType (Node a b Folder)   = Folder
-type instance ItemType (Node a b Document) = Document
+type NodeMap a b = M.Map NamedItem (ANode a b)
 
--- | Construct an 'Node Folder' with an optional default 'ItemVersion'. If no
+-- | Construct an 'NFolder' with an optional default 'ItemVersion'. If no
 -- 'ItemVersion' is given, then it is calculated from the given children.
-mkNFolder :: Maybe ItemVersion -> a -> NodeMap a b x -> Node a b Folder
+mkNFolder :: Maybe ItemVersion -> a -> NodeMap a b -> Node a b Folder
 mkNFolder (Just ver) a xs = NFolder ver a xs
 mkNFolder Nothing    a xs = NFolder ver a xs
-  where ver = maximum . fmap nodeVersion $ M.elems xs
-
-instance J.ToJSON (Node a b Folder) where
-  toJSON (NFolder _ _ xs) = J.object $ M.foldWithKey pair [] xs
-    where
-      pair (_,ItemName n) (NFolder v _ _) = (:) $ (n <> "/") J..= showVersion v
-      pair (_,ItemName n) (NDocument v _) = (:) $  n         J..= showVersion v
-      showVersion = show . itemVersionMilliseconds
+  where ver = maximum . fmap anodeVersion $ M.elems xs
 
 nodeVersion :: Node a b x -> ItemVersion
 nodeVersion (NFolder v _ _) = v
 nodeVersion (NDocument v _) = v
 
+anodeVersion :: ANode a b -> ItemVersion
+anodeVersion (ANode x) = nodeVersion x
+
+instance J.ToJSON (Node a b Folder) where
+  toJSON (NFolder _ _ xs) = J.object $ M.foldWithKey pair [] xs
+    where
+      pair (_,ItemName n) ax = case ax of
+        ANode (NFolder _ _ _) -> (:) $ (n <> "/") J..= ver ax
+        ANode (NDocument _ _) -> (:) $ n          J..= ver ax
+      ver = show . itemVersionMilliseconds . anodeVersion
+
 --------------------------------------------------------------------------------
 
+data Path = Path Item [ItemName]
+  deriving (Eq, Show)
 
-data Path (t :: Item) where
-  FolderPath   :: [ItemName] -> Path Folder
-  DocumentPath :: [ItemName] -> Path Document
-
-
-parsePath :: T.Text -> Maybe (Item, [ItemName])
+parsePath :: T.Text -> Maybe Path
 parsePath "" = Nothing
-parsePath t  = return . (,) pathType =<< path
+parsePath t  = return . pathType =<< path
   where path = traverse id . fmap parseItemName $ T.split (=='/') t
         isFolder = T.last t == '/'
-        pathType = if isFolder then Folder else Document
+        pathType | isFolder  = Path Folder
+                 | otherwise = Path Document
 
-isPublicPath :: Path t -> Bool
-isPublicPath (FolderPath   (ItemName "public":_)) = True
-isPublicPath (DocumentPath (ItemName "public":_)) = True
-isPublicPath _                                    = False
+isPublicPath :: Path -> Bool
+isPublicPath (Path Folder   (ItemName "public":_))   = True
+isPublicPath (Path Document (ItemName "public":_:_)) = True
+isPublicPath _                                       = False
 
-
-lookupPath :: Path t -> Node a b t' -> Maybe (Node a b t)
-lookupPath (DocumentPath _) x@(NDocument _ _) = Just x
-lookupPath (DocumentPath ks)  (NFolder _ _ m) = case ks of
+lookupPath :: Path -> ANode a b -> Maybe (ANode a b)
+lookupPath (Path Document []) x@(ANode (NDocument _ _)) = Just x
+lookupPath (Path Document ks)   (ANode (NFolder _ _ m)) = case ks of
     []      -> Nothing
-    [k]     -> M.lookup (Document,k) m >>= lookupPath (DocumentPath [])
-    (k:ks') -> M.lookup (Folder,k)   m >>= lookupPath (DocumentPath ks')
-lookupPath (FolderPath ks)   x@(NFolder _ _ m) = case ks of
+    [k]     -> M.lookup (Document,k) m >>= lookupPath (Path Document [])
+    (k:ks') -> M.lookup (Folder,  k) m >>= lookupPath (Path Document ks')
+lookupPath (Path Folder ks)   x@(ANode (NFolder _ _ m)) = case ks of
     []      -> Just x
-    (k:ks') -> M.lookup (Folder,k) m >>= lookupPath (FolderPath ks')
+    (k:ks') -> M.lookup (Folder,  k) m >>= lookupPath (Path Folder ks')
 lookupPath _ _ = Nothing
 
 --------------------------------------------------------------------------------
@@ -170,12 +171,11 @@ data RequestOp
   | GetFolder
   deriving (Eq, Show, Enum)
 
-type Request (t :: Item) = (RequestOp, Path t, Maybe ItemVersion)
+type Request = (RequestOp, Path, Maybe ItemVersion)
 
 --------------------------------------------------------------------------------
 
--- | A 'ModuleName' is wrapper around 'Text' that can only contain only valid
--- module names.
+-- | A 'ModuleName' is 'Text' that can only contain only valid module names.
 --
 -- Use the smart constructor 'parseModuleName' to build an 'ModuleName'.
 newtype ModuleName = ModuleName { unModuleName :: T.Text }
