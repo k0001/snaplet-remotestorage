@@ -104,7 +104,7 @@ data Node a b t where
   NDocument :: ItemVersion -> b                -> Node a b Document
 deriving instance (Show a, Show b) => Show (Node a b t)
 
--- | 'Node' existential: ∀a,b. ∃t. ANode a b => Node a b t
+-- | 'Node' existential: ∀a,b. ∃t. Node a b t => ANode a b
 data ANode a b where
   ANode :: Node a b t -> ANode a b
 deriving instance (Show a, Show b) => Show (ANode a b)
