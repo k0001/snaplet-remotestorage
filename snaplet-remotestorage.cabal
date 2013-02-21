@@ -19,6 +19,7 @@ library
   hs-source-dirs: src
   exposed-modules:
     Network.RemoteStorage.Types
+    Snap.Snaplet.RemoteStorage
   -- other-modules:
   build-depends:
      base ==4.5.*
@@ -29,3 +30,20 @@ library
    , hashmap ==1.3.*
    , hashable ==1.2.*
    , network ==2.3.*
+   , lens ==3.8.*
+
+executable main
+  hs-source-dirs: src
+  main-is:        Main.hs
+
+  build-depends:
+     snaplet-remotestorage
+   , base ==4.5.*
+   , snap ==0.11.*
+   , aeson ==0.6.*
+   , text >=0.11.1.0
+   , time ==1.4.*
+   , hashmap ==1.3.*
+   , hashable ==1.2.*
+   , network ==2.3.*
+   , lens ==3.8.*
