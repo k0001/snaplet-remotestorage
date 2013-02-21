@@ -11,7 +11,7 @@
 module Network.RemoteStorage.Types
   ( apiVersion
   , apiAuthMethod
-  , apiFingerResponse
+  , apiWebfingerLink
   -- * Store
   -- ** Individual items
   , ItemName
@@ -63,8 +63,10 @@ apiVersion = "draft-dejong-remotestorage-00"
 apiAuthMethod :: T.Text
 apiAuthMethod = "http://tools.ietf.org/html/rfc6749#section-4.2"
 
-apiFingerResponse :: URI.URI -> URI.URI -> J.Value
-apiFingerResponse storageRoot authEndpoint = J.object
+-- | Renders a WebFinger “links” entry for the given remoteStorage root URI and
+-- authentication endpoint URI.
+apiWebfingerLink :: URI.URI -> URI.URI -> J.Value
+apiWebfingerLink storageRoot authEndpoint = J.object
     [ "rel"        J..= ("remotestorage" :: T.Text)
     , "href"       J..= URI.uriToString (const "") storageRoot ""
     , "type"       J..= apiVersion
