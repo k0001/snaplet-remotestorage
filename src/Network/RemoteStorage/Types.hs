@@ -44,6 +44,7 @@ module Network.RemoteStorage.Types
   , parseAccessScope
   ) where
 
+import qualified Network.URI           as URI
 import qualified Data.Text             as T
 import qualified Data.Aeson            as J
 import           Data.Monoid           ((<>))
@@ -62,14 +63,14 @@ apiVersion = "draft-dejong-remotestorage-00"
 apiAuthMethod :: T.Text
 apiAuthMethod = "http://tools.ietf.org/html/rfc6749#section-4.2"
 
-apiFingerResponse :: T.Text -> T.Text -> J.Value
+apiFingerResponse :: URI.URI -> URI.URI -> J.Value
 apiFingerResponse storageRoot authEndpoint = J.object
     [ "rel"        J..= ("remotestorage" :: T.Text)
-    , "href"       J..= storageRoot
+    , "href"       J..= URI.uriToString (const "") storageRoot ""
     , "type"       J..= apiVersion
     , "properties" J..=
         [ "auth-method"   J..= apiAuthMethod
-        , "auth-endpoint" J..= authEndpoint
+        , "auth-endpoint" J..= URI.uriToString (const "") authEndpoint ""
         ]
     ]
 
