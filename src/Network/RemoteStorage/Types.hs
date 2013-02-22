@@ -13,6 +13,8 @@ module Network.RemoteStorage.Types
   , apiAuthMethod
   , apiWebfingerLink
   -- * Store
+  -- ** Storage backend
+  , Store(..)
   -- ** Individual items
   , ItemName
   , unItemName
@@ -20,20 +22,17 @@ module Network.RemoteStorage.Types
   , validItemNameChar
   , ItemVersion
   , itemVersionMilliseconds
-  , Item(..)
-  -- ** Storage tree
-  -- *** Building your storage
-  , Storage
-  , storage
-  , document
-  , folder
-  -- *** Node manipulation
-  , Node(..)
-  , mkNFolder
-  , nodeVersion
+  , itemVersionFromMilliseconds
+  , ItemType(..)
+  , Folder(..)
+  , Document(..)
+  -- ** Item paths
+  , Path
   , parsePath
-  , lookupPath
   , isPublicPath
+  , bshowPath
+  , bshowFolderPath
+  , bshowDocumentPath
   -- * Requests
   , RequestOp(..)
   , Request
@@ -50,16 +49,15 @@ module Network.RemoteStorage.Types
   , parseAccessScope
   ) where
 
-import qualified Network.URI           as URI
-import qualified Data.ByteString.Char8 as B
-import qualified Data.Text as T
+import           Codec.MIME.Type       (MIMEType)
 import qualified Data.Aeson            as J
-import           Data.Monoid           ((<>))
-import           Data.Time.Clock.POSIX (POSIXTime)
-import qualified Data.Hashable         as H
-import qualified Data.HashMap          as M
+import qualified Data.ByteString.Char8 as B
 import qualified Data.Char             as C
+import           Data.Monoid           ((<>))
+import qualified Data.Text as T
+import           Data.Time.Clock.POSIX (POSIXTime)
 import           Data.Traversable      (traverse)
+import qualified Network.URI           as URI
 
 
 --------------------------------------------------------------------------------
@@ -89,7 +87,7 @@ apiWebfingerLink storageRoot authEndpoint = J.object
 --
 -- Use the smart constructor 'parseItemName' to build an 'ItemName'.
 newtype ItemName = ItemName { unItemName :: B.ByteString }
-  deriving (Eq, Show, H.Hashable, Ord)
+  deriving (Eq, Show, Ord)
 
 -- | 'Just' an 'ItemName' if the given 'B.ByteString' is a valid item name
 -- otherwise 'Nothing'.
@@ -111,99 +109,73 @@ type ItemVersion = POSIXTime
 itemVersionMilliseconds :: ItemVersion -> Integer
 itemVersionMilliseconds = truncate . (*1000)
 
+itemVersionFromMilliseconds :: Integer -> ItemVersion
+itemVersionFromMilliseconds i = fromInteger $ i `div` 1000
+
+
 --------------------------------------------------------------------------------
 
-data Item = Folder | Document
+data ItemType = TFolder | TDocument
   deriving (Show, Eq, Ord, Enum)
 
-instance H.Hashable Item where
-  hashWithSalt = H.hashUsing fromEnum
-
-type NamedItem = (Item, ItemName)
-
 --------------------------------------------------------------------------------
 
-type Storage a b = Node a b 'Folder
-
-storage :: Maybe ItemVersion -> a -> NodeMap a b -> Storage a b
-storage mver a = mkNFolder mver a
-
-folder :: Maybe ItemVersion -> a -> NodeMap a b -> ANode a b
-folder mver a m = ANode $ mkNFolder mver a m
-
-document :: ItemVersion -> b -> ANode a b
-document ver b = ANode $ NDocument ver b
-
---------------------------------------------------------------------------------
-
-type NodeMap a b = M.Map NamedItem (ANode a b)
-
--- | 'Node' existential: ∀a,b. ∃t. Node a b t => ANode a b
-data ANode a b where
-  ANode :: Node a b t -> ANode a b
-deriving instance (Show a, Show b) => Show (ANode a b)
-
--- | A 'Node' stores versioned values of type 'b' for a 'Document' or, together
--- with it children nodes, values of type 'a' for a 'Folder'.
-data Node a b t where
-  NFolder   :: ItemVersion -> a -> NodeMap a b -> Node a b Folder
-  NDocument :: ItemVersion -> b                -> Node a b Document
-deriving instance (Show a, Show b) => Show (Node a b t)
-
-
--- | Construct an 'NFolder' with an optional default 'ItemVersion'. If no
--- 'ItemVersion' is given, then it is calculated from the given children.
-mkNFolder :: Maybe ItemVersion -> a -> NodeMap a b -> Node a b Folder
-mkNFolder (Just ver) a xs = NFolder ver a xs
-mkNFolder Nothing    a xs = NFolder ver a xs
-  where ver = maximum . fmap anodeVersion $ M.elems xs
-
-nodeVersion :: Node a b x -> ItemVersion
-nodeVersion (NFolder v _ _) = v
-nodeVersion (NDocument v _) = v
-
-anodeVersion :: ANode a b -> ItemVersion
-anodeVersion (ANode x) = nodeVersion x
-
-instance J.ToJSON (Node a b Folder) where
-  toJSON (NFolder _ _ xs) = J.object $ M.foldWithKey pair [] xs
-    where
-      pair (_,ItemName n) ax =
-        let n' = T.pack . B.unpack $ n in
-        case ax of
-          ANode (NFolder _ _ _) -> (:) $ (n' <> "/") J..= ver ax
-          ANode (NDocument _ _) -> (:) $  n'         J..= ver ax
-      ver = show . itemVersionMilliseconds . anodeVersion
-
-
---------------------------------------------------------------------------------
-
-data Path = Path Item [ItemName]
+data Folder = Folder ItemVersion [(ItemType, ItemName, ItemVersion)]
   deriving (Eq, Show)
+
+data Document = Document ItemVersion MIMEType
+  deriving (Eq, Show)
+
+instance J.ToJSON Folder where
+  toJSON (Folder _ xs) = J.object $ map pair xs
+    where
+      pair (itemt, ItemName n, ver) =
+        let n'   = T.pack . B.unpack $ n
+            ver' = show . itemVersionMilliseconds $ ver in
+        case itemt of
+          TFolder   -> (n' <> "/") J..= ver'
+          TDocument ->  n'         J..= ver'
+
+--------------------------------------------------------------------------------
+
+data Path = Path ItemType [ItemName]
+  deriving (Eq)
+
+instance Show Path where
+  show = B.unpack . bshowPath
+
+bshowPath :: Path -> B.ByteString
+bshowPath (Path TFolder    xs) = bshowFolderPath xs
+bshowPath (Path TDocument  xs) = bshowDocumentPath xs
+
+bshowFolderPath :: [ItemName] -> B.ByteString
+bshowFolderPath xs = "/" <> inner <> "/"
+  where inner = B.intercalate "/" $ fmap unItemName xs
+
+bshowDocumentPath :: [ItemName] -> B.ByteString
+bshowDocumentPath xs = "/" <> inner
+  where inner = B.intercalate "/" $ fmap unItemName xs
 
 parsePath :: B.ByteString -> Maybe Path
 parsePath "" = Nothing
 parsePath s  = return . pathType =<< path
   where path = traverse id . fmap parseItemName $ B.split '/' s
         isFolder = B.last s == '/'
-        pathType | isFolder  = Path Folder
-                 | otherwise = Path Document
+        pathType | isFolder  = Path TFolder
+                 | otherwise = Path TDocument
 
 isPublicPath :: Path -> Bool
-isPublicPath (Path Folder   (ItemName "public":_))   = True
-isPublicPath (Path Document (ItemName "public":_:_)) = True
-isPublicPath _                                       = False
+isPublicPath (Path TFolder   (ItemName "public":_))   = True
+isPublicPath (Path TDocument (ItemName "public":_:_)) = True
+isPublicPath _                                        = False
 
-lookupPath :: Path -> ANode a b -> Maybe (ANode a b)
-lookupPath (Path Document []) x@(ANode (NDocument _ _)) = Just x
-lookupPath (Path Document ks)   (ANode (NFolder _ _ m)) = case ks of
-    []      -> Nothing
-    [k]     -> M.lookup (Document,k) m >>= lookupPath (Path Document [])
-    (k:ks') -> M.lookup (Folder,  k) m >>= lookupPath (Path Document ks')
-lookupPath (Path Folder ks)   x@(ANode (NFolder _ _ m)) = case ks of
-    []      -> Just x
-    (k:ks') -> M.lookup (Folder,  k) m >>= lookupPath (Path Folder ks')
-lookupPath _ _ = Nothing
+
+data Store m a = Store
+  { sGetDocument :: Path -> Maybe ItemVersion -> m (Maybe (Document, a))
+  , sPutDocument :: Path -> Maybe ItemVersion -> m (Maybe ItemVersion)
+  , sDelDocument :: Path -> Maybe ItemVersion -> m Bool
+  , mGetFolder   :: Path -> Maybe ItemVersion -> m (Maybe Folder)
+  }
 
 --------------------------------------------------------------------------------
 
@@ -257,4 +229,5 @@ parseAccessScope t =
     case (parseModuleName a, parseAccessLevel $ B.drop 1 b) of
       (Just a', Just b') -> Just (a',b')
       _                  -> Nothing
+
 

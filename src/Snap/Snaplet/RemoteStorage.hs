@@ -5,6 +5,7 @@ module Snap.Snaplet.RemoteStorage
   ( RemoteStorage
   , rsStorageRoot
   , rsAuthEndpoint
+  , rsStore
   , init
   , root
   , handleWebfingerSimple
@@ -15,26 +16,32 @@ import Prelude hiding (init)
 import Snap
 import Control.Lens.TH (makeLenses)
 import Network.URI as URI
-import Network.RemoteStorage.Types as R
+import qualified Network.RemoteStorage.Types as R
 import Data.Aeson as J
 
-data RemoteStorage = RemoteStorage
+data RemoteStorage a = RemoteStorage
   { _rsStorageRoot  :: URI.URI
   , _rsAuthEndpoint :: URI.URI
+  , _rsStore        :: R.Store Snap a
   }
 
 makeLenses ''RemoteStorage
 
-init :: URI.URI -> URI.URI -> SnapletInit b RemoteStorage
-init sr ae = mkSnaplet Nothing $ do
-    return $ RemoteStorage sr ae
+init :: URI.URI -> URI.URI -> R.Store Snap a
+     -> SnapletInit b (RemoteStorage a)
+init sr ae s = mkSnaplet Nothing $ do
+    return $ RemoteStorage sr ae s
   where
     mkSnaplet = makeSnaplet "remotestorage" "RemoteStorage snaplet"
 
-root :: Handler b RemoteStorage ()
-root = route []
+root :: Handler b (RemoteStorage a) ()
+root = dir "" $ do
+   npath <- R.parsePath <$> getsRequest rqPathInfo
+   case npath of
+     Nothing -> writeText "NOTHING!"
+     Just p  -> writeText "SOMETHING!"
 
-handleWebfingerSimple :: Handler b RemoteStorage ()
+handleWebfingerSimple :: Handler b (RemoteStorage a) ()
 handleWebfingerSimple = method GET $ do
     mres <- getQueryParam "resource"
     case mres of
@@ -47,5 +54,5 @@ handleWebfingerSimple = method GET $ do
         writeLBS $ J.encode resp
         modifyResponse $ setContentType "application/jrd+json"
 
-webfingerLink :: RemoteStorage -> J.Value
+webfingerLink :: RemoteStorage a -> J.Value
 webfingerLink rs = R.apiWebfingerLink (_rsStorageRoot rs) (_rsAuthEndpoint rs)
