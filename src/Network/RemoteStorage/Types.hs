@@ -1,9 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE StandaloneDeriving #-}
 
 -- | This module provides types and functions to safely encode the remoteStorage
 -- support specified by IETF's @draft-dejong-remotestorage-00.txt@ draft.
