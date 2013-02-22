@@ -49,3 +49,4 @@ executable main
    , time ==1.4.*
    , network ==2.3.*
    , lens ==3.8.*
+   , unix-compat ==0.4.*

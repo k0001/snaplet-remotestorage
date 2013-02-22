@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | This module provides types and functions to safely encode the remoteStorage
 -- support specified by IETF's @draft-dejong-remotestorage-00.txt@ draft.
@@ -16,13 +17,15 @@ module Network.RemoteStorage.Types
   , parseItemName
   , validItemNameChar
   , ItemVersion
+  , parseItemVersion
   , itemVersionMilliseconds
   , itemVersionFromMilliseconds
+  , bshowItemVersion
   , ItemType(..)
   , Folder(..)
   , Document(..)
   -- ** Item paths
-  , Path
+  , Path(..)
   , parsePath
   , isPublicPath
   , bshowPath
@@ -44,13 +47,17 @@ module Network.RemoteStorage.Types
   , parseAccessScope
   ) where
 
-import           Codec.MIME.Type       (MIMEType)
+import           Control.Monad
+import           Codec.MIME.Parse      (parseMIMEType)
+import           Codec.MIME.Type       (MIMEType, showMIMEType, mimeType)
+import qualified Data.Aeson.Types      as J (Parser)
 import qualified Data.Aeson            as J
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Char             as C
 import           Data.Monoid           ((<>))
-import qualified Data.Text as T
-import           Data.Time.Clock.POSIX (POSIXTime)
+import qualified Data.Text             as T
+import           Data.Time.Clock
+import           Data.Time.Clock.POSIX
 import           Data.Traversable      (traverse)
 import qualified Network.URI           as URI
 
@@ -99,14 +106,22 @@ validItemNameChar c = C.isAsciiUpper c || C.isAsciiLower c || C.isDigit c
 
 --------------------------------------------------------------------------------
 
-type ItemVersion = POSIXTime
+newtype ItemVersion = ItemVersion { unItemVersion :: UTCTime }
+  deriving (Eq, Show, Read, Ord, J.ToJSON, J.FromJSON)
 
 itemVersionMilliseconds :: ItemVersion -> Integer
-itemVersionMilliseconds = truncate . (*1000)
+itemVersionMilliseconds = truncate . (*1000) . utcTimeToPOSIXSeconds . unItemVersion
 
 itemVersionFromMilliseconds :: Integer -> ItemVersion
-itemVersionFromMilliseconds i = fromInteger $ i `div` 1000
+itemVersionFromMilliseconds i = ItemVersion . posixSecondsToUTCTime $ fromInteger i / 1000
 
+parseItemVersion :: B.ByteString -> Maybe ItemVersion
+parseItemVersion s = case reads (B.unpack s) of
+    ((i,""):_) -> Just $ itemVersionFromMilliseconds i
+    _          -> Nothing
+
+bshowItemVersion :: ItemVersion -> B.ByteString
+bshowItemVersion = B.pack . show . itemVersionMilliseconds
 
 --------------------------------------------------------------------------------
 
@@ -118,8 +133,10 @@ data ItemType = TFolder | TDocument
 data Folder = Folder ItemVersion [(ItemType, ItemName, ItemVersion)]
   deriving (Eq, Show)
 
-data Document = Document ItemVersion MIMEType
-  deriving (Eq, Show)
+data Document = Document
+  { docVersion     :: ItemVersion
+  , docContentType :: MIMEType
+  } deriving (Eq, Show)
 
 instance J.ToJSON Folder where
   toJSON (Folder _ xs) = J.object $ map pair xs
@@ -130,6 +147,15 @@ instance J.ToJSON Folder where
         case itemt of
           TFolder   -> (n' <> "/") J..= ver'
           TDocument ->  n'         J..= ver'
+
+--------------------------------------------------------------------------------
+
+toJSONMIMEType :: MIMEType -> J.Value
+toJSONMIMEType = J.toJSON . showMIMEType
+
+fromJSONMIMEType :: J.Value -> J.Parser MIMEType
+fromJSONMIMEType = J.withText "MIMEType" $ \t ->
+     maybe mzero (return . mimeType) . parseMIMEType $ T.unpack t
 
 --------------------------------------------------------------------------------
 
