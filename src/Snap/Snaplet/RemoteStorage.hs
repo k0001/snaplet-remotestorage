@@ -18,6 +18,7 @@ import Control.Lens.TH (makeLenses)
 import Network.URI as URI
 import qualified Network.RemoteStorage.Types as R
 import Data.Aeson as J
+import qualified Data.Text as T
 
 data RemoteStorage = RemoteStorage
   { _rsStorageRoot  :: URI.URI
@@ -39,15 +40,15 @@ root :: Handler b RemoteStorage ()
 root = do
     mreq <- rsRequest
     case mreq of
-      Nothing -> writeText "Gad reques!"
+      Nothing -> writeText "Not a valid remoteStorage request."
       Just (r, p, mv) -> do
         store <- gets _rsStore
         case r of
           R.GetDocument -> do
             mres <- liftSnap $ R.sGetDocument store p mv
             case mres of
-              Nothing -> writeText "GetDocukumen"
-              Just (_doc,ma) -> liftSnap $ ma
+              Left msg -> writeText $ T.pack msg
+              Right (_doc,ma) -> liftSnap $ ma
           R.GetFolder   -> undefined
           R.PutDocument -> undefined
           R.DelDocument -> undefined

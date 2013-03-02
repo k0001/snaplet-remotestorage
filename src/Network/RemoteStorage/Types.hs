@@ -20,7 +20,7 @@ module Network.RemoteStorage.Types
   , parseItemVersion
   , itemVersionMilliseconds
   , itemVersionFromMilliseconds
-  , bshowItemVersion
+  , showItemVersion
   , ItemType(..)
   , Folder(..)
   , Document(..)
@@ -47,10 +47,7 @@ module Network.RemoteStorage.Types
   , parseAccessScope
   ) where
 
-import           Control.Monad
-import           Codec.MIME.Parse      (parseMIMEType)
-import           Codec.MIME.Type       (MIMEType, showMIMEType, mimeType)
-import qualified Data.Aeson.Types      as J (Parser)
+import           Codec.MIME.Type       (MIMEType)
 import qualified Data.Aeson            as J
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Char             as C
@@ -61,8 +58,6 @@ import           Data.Time.Clock.POSIX
 import           Data.Traversable      (traverse)
 import qualified Network.URI           as URI
 
-
---------------------------------------------------------------------------------
 
 apiVersion :: B.ByteString
 apiVersion = "draft-dejong-remotestorage-00"
@@ -120,8 +115,8 @@ parseItemVersion s = case reads (B.unpack s) of
     ((i,""):_) -> Just $ itemVersionFromMilliseconds i
     _          -> Nothing
 
-bshowItemVersion :: ItemVersion -> B.ByteString
-bshowItemVersion = B.pack . show . itemVersionMilliseconds
+showItemVersion :: ItemVersion -> String
+showItemVersion = show . itemVersionMilliseconds
 
 --------------------------------------------------------------------------------
 
@@ -147,15 +142,6 @@ instance J.ToJSON Folder where
         case itemt of
           TFolder   -> (n' <> "/") J..= ver'
           TDocument ->  n'         J..= ver'
-
---------------------------------------------------------------------------------
-
-toJSONMIMEType :: MIMEType -> J.Value
-toJSONMIMEType = J.toJSON . showMIMEType
-
-fromJSONMIMEType :: J.Value -> J.Parser MIMEType
-fromJSONMIMEType = J.withText "MIMEType" $ \t ->
-     maybe mzero (return . mimeType) . parseMIMEType $ T.unpack t
 
 --------------------------------------------------------------------------------
 
@@ -192,10 +178,10 @@ isPublicPath _                                        = False
 
 
 data Store m a = Store
-  { sGetDocument :: Path -> Maybe ItemVersion -> m (Maybe (Document, a))
-  , sPutDocument :: Path -> Maybe ItemVersion -> m (Maybe ItemVersion)
-  , sDelDocument :: Path -> Maybe ItemVersion -> m Bool
-  , mGetFolder   :: Path -> Maybe ItemVersion -> m (Maybe Folder)
+  { sGetDocument :: Path -> Maybe ItemVersion -> m (Either String (Document, a))
+  , sPutDocument :: Path -> Maybe ItemVersion -> m (Either String ItemVersion)
+  , sDelDocument :: Path -> Maybe ItemVersion -> m (Either String ())
+  , mGetFolder   :: Path -> Maybe ItemVersion -> m (Either String Folder)
   }
 
 --------------------------------------------------------------------------------
