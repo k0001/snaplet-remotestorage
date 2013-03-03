@@ -4,6 +4,9 @@
 
 module Snap.Snaplet.RemoteStorage.FileSystem (fsStore) where
 
+import qualified Control.Exception            as E
+import qualified System.Directory             as SD
+import qualified System.FilePath              as SF
 import           Codec.MIME.Parse             (parseMIMEType)
 import           Codec.MIME.Type              (MIMEType, mimeType, showMIMEType)
 import           Data.Aeson                   as J
@@ -12,9 +15,12 @@ import           Data.Monoid
 import qualified Data.ByteString.Char8        as B
 import qualified Data.ByteString.Lazy         as BL
 import qualified Network.RemoteStorage.Types  as RT
-import qualified System.PosixCompat.Files     as PF
 import qualified Data.Text                    as T
+import           Data.List                    (isSuffixOf)
 import           Snap
+import           Control.Lens
+import           Control.Monad.Trans.Maybe
+
 
 fsStore :: (MonadIO m, MonadSnap n) => RT.Store m (n ())
 fsStore = RT.Store
@@ -29,8 +35,8 @@ getDocument :: (MonadIO m, MonadSnap n)
 getDocument p mv = do
   let fpath     = B.unpack $ "/tmp/rs" <> RT.bshowPath p
       fpathMeta = B.unpack $ "/tmp/rs" <> RT.bshowPath p <> ".metadata"
-  ex     <- liftIO . PF.fileExist $ fpath
-  exMeta <- liftIO . PF.fileExist $ fpathMeta
+  ex     <- liftIO . SD.doesFileExist $ fpath
+  exMeta <- liftIO . SD.doesFileExist $ fpathMeta
   if not (ex && exMeta)
     then return $ Left "Document does not exist"
     else do
@@ -39,7 +45,7 @@ getDocument p mv = do
         Nothing -> return $ Left "Malformed document metadata."
         Just (Meta v ct) -> do
           if not (isVersion v)
-            then return $ Left "Requested document version not avaiable"
+            then return $ Left "Requested document version not available"
             else do
               let doc = RT.Document v (unMIMEType' ct)
               return $ Right (doc, mres fpath doc)
@@ -50,8 +56,6 @@ getDocument p mv = do
                        . setHeader "ETag" (B.pack $ RT.showItemVersion v)
         sendFile fp
 
-
-
 putDocument :: MonadIO m => RT.Path -> Maybe RT.ItemVersion -> m (Either String RT.ItemVersion)
 putDocument p mv = undefined
 
@@ -59,7 +63,27 @@ delDocument :: MonadIO m => RT.Path -> Maybe RT.ItemVersion -> m (Either String 
 delDocument p mv = undefined
 
 getFolder :: MonadIO m => RT.Path -> Maybe RT.ItemVersion -> m (Either String RT.Folder)
-getFolder p mv = undefined
+getFolder p mv = do
+  let fpath = B.unpack $ "/tmp/rs" <> RT.bshowPath p
+  epaths <- liftIO . E.try $ SD.getDirectoryContents fpath
+  case epaths of
+    Left e -> return $ Left "Folder not found." where _ = e :: IOError
+    Right paths -> do
+      -- XXX: we only list children files currently
+      let metaPaths = filter (isSuffixOf ".metadata") paths
+      mmetas <- liftM sequence . liftIO $ forM metaPaths $ \fn -> runMaybeT $ do
+        iname <- MaybeT . return $ RT.parseItemName (B.pack $ SF.dropExtension fn)
+        meta  <- MaybeT . readMetaFile $ SF.joinPath [fpath, fn]
+        return (RT.TDocument, iname, metaVersion meta)
+      case mmetas of
+        Nothing -> return $ Left "Folder metadata corrupted."
+        Just ms ->
+          let Just v = maximumOf (traverse._3) ms in
+          if not (isVersion v)
+            then return $ Left "Requested folder version not available"
+            else return . Right $ RT.Folder v ms
+  where
+    isVersion v = maybe True (==v) mv
 
 --------------------------------------------------------------------------------
 

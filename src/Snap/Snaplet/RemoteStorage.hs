@@ -41,7 +41,6 @@ init sr ae s = mkSnaplet Nothing $ do
 root :: Handler b RemoteStorage ()
 root = do
     mreq <- rsRequest
-    liftIO . putStrLn $ "mreq: " ++ show mreq
     case mreq of
       Nothing -> writeText "Not a valid remoteStorage request."
       Just (r, p, mv) -> do
