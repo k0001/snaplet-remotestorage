@@ -1,3 +1,5 @@
+-- | This module is crap, but it helps me understand stuff as I go.
+
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE BangPatterns #-}
