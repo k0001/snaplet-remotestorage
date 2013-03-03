@@ -17,8 +17,10 @@ import Snap
 import Control.Lens.TH (makeLenses)
 import Network.URI as URI
 import qualified Network.RemoteStorage.Types as R
+import qualified Data.ByteString.Char8       as B
 import Data.Aeson as J
 import qualified Data.Text as T
+import Data.Monoid
 
 data RemoteStorage = RemoteStorage
   { _rsStorageRoot  :: URI.URI
@@ -39,6 +41,7 @@ init sr ae s = mkSnaplet Nothing $ do
 root :: Handler b RemoteStorage ()
 root = do
     mreq <- rsRequest
+    liftIO . putStrLn $ "mreq: " ++ show mreq
     case mreq of
       Nothing -> writeText "Not a valid remoteStorage request."
       Just (r, p, mv) -> do
@@ -49,7 +52,14 @@ root = do
             case mres of
               Left msg -> writeText $ T.pack msg
               Right (_doc,ma) -> liftSnap $ ma
-          R.GetFolder   -> undefined
+          R.GetFolder   -> do
+            mres <- liftSnap $ R.sGetFolder store p mv
+            case mres of
+              Left msg -> writeText $ T.pack msg
+              Right f@(R.Folder v _) -> do
+                modifyResponse $ setContentType "application/json"
+                               . setHeader "ETag" (B.pack $ R.showItemVersion v)
+                writeLBS $ encode f
           R.PutDocument -> undefined
           R.DelDocument -> undefined
     return ()
@@ -57,7 +67,7 @@ root = do
 rsRequest :: MonadSnap m => m (Maybe R.Request)
 rsRequest = do
     rq <- getRequest
-    let mpath = R.parsePath $ rqPathInfo rq
+    let mpath = R.parsePath $ "/" <> rqPathInfo rq
         mversion = prqVersion rq
     case mpath of
       Nothing -> return Nothing

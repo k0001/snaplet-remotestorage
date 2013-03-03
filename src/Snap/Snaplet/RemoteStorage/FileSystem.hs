@@ -21,20 +21,20 @@ fsStore = RT.Store
   { RT.sGetDocument = getDocument
   , RT.sPutDocument = putDocument
   , RT.sDelDocument = delDocument
-  , RT.mGetFolder   = getFolder
+  , RT.sGetFolder   = getFolder
   }
 
 getDocument :: (MonadIO m, MonadSnap n)
             => RT.Path -> Maybe RT.ItemVersion -> m (Either String (RT.Document, n ()))
 getDocument p mv = do
-  let fpath = "/tmp/rs" <> show p
-      fpathMeta = fpath <> ".metadata"
-  ex     <- liftIO $ PF.fileExist fpath
-  exMeta <- liftIO $ PF.fileExist fpathMeta
+  let fpath     = B.unpack $ "/tmp/rs" <> RT.bshowPath p
+      fpathMeta = B.unpack $ "/tmp/rs" <> RT.bshowPath p <> ".metadata"
+  ex     <- liftIO . PF.fileExist $ fpath
+  exMeta <- liftIO . PF.fileExist $ fpathMeta
   if not (ex && exMeta)
     then return $ Left "Document does not exist"
     else do
-      mmeta <- liftIO $ readMetaFile fpathMeta
+      mmeta <- liftIO . readMetaFile $ fpathMeta
       case mmeta of
         Nothing -> return $ Left "Malformed document metadata."
         Just (Meta v ct) -> do

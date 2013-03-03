@@ -146,30 +146,33 @@ instance J.ToJSON Folder where
 --------------------------------------------------------------------------------
 
 data Path = Path ItemType [ItemName]
-  deriving (Eq)
-
-instance Show Path where
-  show = B.unpack . bshowPath
+  deriving (Eq, Show)
 
 bshowPath :: Path -> B.ByteString
 bshowPath (Path TFolder    xs) = bshowFolderPath xs
 bshowPath (Path TDocument  xs) = bshowDocumentPath xs
 
 bshowFolderPath :: [ItemName] -> B.ByteString
-bshowFolderPath xs = "/" <> inner <> "/"
-  where inner = B.intercalate "/" $ fmap unItemName xs
+bshowFolderPath [] = "/"
+bshowFolderPath xs = bshowDocumentPath xs <> "/"
 
 bshowDocumentPath :: [ItemName] -> B.ByteString
-bshowDocumentPath xs = "/" <> inner
-  where inner = B.intercalate "/" $ fmap unItemName xs
+bshowDocumentPath xs = "/" <> (B.intercalate "/" $ fmap unItemName xs)
 
 parsePath :: B.ByteString -> Maybe Path
-parsePath "" = Nothing
-parsePath s  = return . pathType =<< path
-  where path = traverse id . fmap parseItemName $ B.split '/' s
-        isFolder = B.last s == '/'
-        pathType | isFolder  = Path TFolder
-                 | otherwise = Path TDocument
+parsePath ""  = Nothing
+parsePath "/" = Just $ Path TFolder []
+parsePath s
+  | B.head s /= '/' = Nothing
+  | otherwise       = return . Path pathType =<< path
+  where
+   path = traverse id . fmap parseItemName $ pieces
+   isFolder = B.last s == '/'
+   pathType | isFolder  = TFolder
+            | otherwise = TDocument
+   pieces | isFolder  = init pieces'
+          | otherwise = pieces'
+          where pieces' = B.split '/' (B.tail s)
 
 isPublicPath :: Path -> Bool
 isPublicPath (Path TFolder   (ItemName "public":_))   = True
@@ -181,7 +184,7 @@ data Store m a = Store
   { sGetDocument :: Path -> Maybe ItemVersion -> m (Either String (Document, a))
   , sPutDocument :: Path -> Maybe ItemVersion -> m (Either String ItemVersion)
   , sDelDocument :: Path -> Maybe ItemVersion -> m (Either String ())
-  , mGetFolder   :: Path -> Maybe ItemVersion -> m (Either String Folder)
+  , sGetFolder   :: Path -> Maybe ItemVersion -> m (Either String Folder)
   }
 
 --------------------------------------------------------------------------------
