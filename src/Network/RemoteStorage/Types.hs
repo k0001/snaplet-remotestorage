@@ -47,7 +47,7 @@ module Network.RemoteStorage.Types
   , parseAccessScope
   ) where
 
-import           Codec.MIME.Type       (MIMEType)
+import qualified Codec.MIME.Type       as MIME
 import qualified Data.Aeson            as J
 import qualified Data.ByteString.Char8 as B
 import qualified Data.Char             as C
@@ -130,7 +130,7 @@ data Folder = Folder ItemVersion [(ItemType, ItemName, ItemVersion)]
 
 data Document = Document
   { docVersion     :: ItemVersion
-  , docContentType :: MIMEType
+  , docContentType :: MIME.Type
   } deriving (Eq, Show)
 
 instance J.ToJSON Folder where

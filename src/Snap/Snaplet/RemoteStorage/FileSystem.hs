@@ -7,10 +7,9 @@ module Snap.Snaplet.RemoteStorage.FileSystem (fsStore) where
 import qualified Control.Exception            as E
 import qualified System.Directory             as SD
 import qualified System.FilePath              as SF
-import           Codec.MIME.Parse             (parseMIMEType)
-import           Codec.MIME.Type              (MIMEType, mimeType, showMIMEType)
-import           Data.Aeson                   as J
-import           Data.Aeson.TH                as J
+import qualified Codec.MIME.Parse             as MIME
+import           Codec.MIME.Type              as MIME
+import qualified Data.Aeson                   as J
 import           Data.Monoid
 import qualified Data.ByteString.Char8        as B
 import qualified Data.ByteString.Lazy         as BL
@@ -47,12 +46,12 @@ getDocument p mv = do
           if not (isVersion v)
             then return $ Left "Requested document version not available"
             else do
-              let doc = RT.Document v (unMIMEType' ct)
+              let doc = RT.Document v ct
               return $ Right (doc, mres fpath doc)
   where
     isVersion v = maybe True (==v) mv
     mres fp (RT.Document v ct) = do
-        modifyResponse $ setContentType (B.pack $ showMIMEType ct)
+        modifyResponse $ setContentType (B.pack $ MIME.showType ct)
                        . setHeader "ETag" (B.pack $ RT.showItemVersion v)
         sendFile fp
 
@@ -85,11 +84,9 @@ getFolder p mv = do
   where
     isVersion v = maybe True (==v) mv
 
---------------------------------------------------------------------------------
-
 data Meta = Meta
   { metaVersion      :: RT.ItemVersion
-  , metaContentType  :: MIMEType'
+  , metaContentType  :: MIME.Type
   } deriving (Eq, Show)
 
 readMetaFile :: FilePath -> IO (Maybe Meta)
@@ -97,18 +94,16 @@ readMetaFile fp = do
   !bs <- B.readFile fp
   return . J.decode' $ BL.fromChunks [bs]
 
---------------------------------------------------------------------------------
+instance J.ToJSON Meta where
+  toJSON (Meta v ct) =
+    J.object [ "version"      J..= J.toJSON v
+             , "content-type" J..= J.toJSON (MIME.showType ct)
+             ]
 
--- | This is a small wrapper around 'MIMEType' that we use to provide
--- 'J.FromJSON' and 'J.ToJSON' instances.
-newtype MIMEType' = MIMEType' { unMIMEType' :: MIMEType }
-  deriving (Eq, Show)
-
-instance J.FromJSON MIMEType' where
-  parseJSON = J.withText "MIMEType" $ \t ->
-     maybe mzero (return . MIMEType' . mimeType) . parseMIMEType $ T.unpack t
-
-instance J.ToJSON MIMEType' where
-  toJSON = J.toJSON . showMIMEType . unMIMEType'
-
-$(J.deriveJSON (drop 4) ''Meta)
+instance J.FromJSON Meta where
+  parseJSON (J.Object v) =
+    Meta <$> (v J..: "version")
+         <*> (v J..: "content-type" >>= pContentType)
+    where
+      pContentType = maybe mzero return . MIME.parseMIMEType . T.unpack
+  parseJSON _ = mzero
